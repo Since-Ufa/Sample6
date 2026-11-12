@@ -1,0 +1,9 @@
+prepare:
+  test_size: 0.2
+  seed: 42
+
+train:
+  hidden: 16
+  lr: 0.01
+  epochs: 200
+  seed: 42

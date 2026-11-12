@@ -1,0 +1,58 @@
+services:
+  rustfs:
+    image: docker.io/rustfs/rustfs:1.0.4
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+    volumes:
+      - rustfs-data:/data
+
+  create-buckets:
+    image: docker.io/amazon/aws-cli:latest
+    depends_on:
+      - rustfs
+    environment:
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      AWS_DEFAULT_REGION: us-east-1
+      NO_PROXY: rustfs
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until aws --endpoint-url http://rustfs:9000 s3 ls; do sleep 1; done
+        aws --endpoint-url http://rustfs:9000 s3 mb s3://dvc || true
+        aws --endpoint-url http://rustfs:9000 s3 mb s3://mlflow || true
+
+  mlflow:
+    build:
+      context: .
+      dockerfile: Containerfile.mlflow
+    depends_on:
+      - create-buckets
+    ports:
+      - "5000:5000"
+    environment:
+      AWS_ACCESS_KEY_ID: rustfsadmin
+      AWS_SECRET_ACCESS_KEY: rustfsadmin
+      MLFLOW_S3_ENDPOINT_URL: http://rustfs:9000
+      MLFLOW_SERVER_ENABLE_JOB_EXECUTION: "false"
+      NO_PROXY: rustfs
+    volumes:
+      - mlflow-db:/mlflow
+    command: >
+      mlflow server
+      --host 0.0.0.0 --port 5000 --workers 1
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --artifacts-destination s3://mlflow
+      --allowed-hosts "*"
+
+volumes:
+  rustfs-data:
+  mlflow-db:
